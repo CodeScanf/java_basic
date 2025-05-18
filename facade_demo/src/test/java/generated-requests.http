@@ -1,0 +1,13 @@
+###
+GET localhost:8080/time
+
+<> 2025-05-17T213100.200.txt
+
+###
+GET http://localhost:8080/time
+
+###
+GET http://localhost:8080/loadPlugin/count_plugin-1.0-SNAPSHOT.jar
+
+###
+GET http://localhost:8080/time
