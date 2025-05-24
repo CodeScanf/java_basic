@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 public class MyHashMap {
 
-    @Test
+//    @Test
 //    void testApi(){
 //        MyHashMap<String, String> myHashMap = new MyHashMap<>();
 //        int count = 100000;
