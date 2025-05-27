@@ -11,4 +11,16 @@ import tech.insight.spring.Component;
  */
 @Component(name = "mydog")
 public class Dog {
+
+    @Autowired
+    private Cat cat;
+
+    @Autowired
+    private Dog dog;
+
+    @PostConstruct
+    public void init() {
+        System.out.println("dog 创建完成 里面有一只猫" + cat);
+        System.out.println("dog 创建完成 里面有一只狗" + dog);
+    }
 }

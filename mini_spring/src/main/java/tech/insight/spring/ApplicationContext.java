@@ -3,6 +3,7 @@ package tech.insight.spring;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -30,41 +31,85 @@ public class ApplicationContext {
 
     private Map<String, Object> ioc = new HashMap<>();
 
+    private Map<String, Object> loadingIoc = new HashMap<>();
+
+    private List<BeanPostProcessor> postProcessors = new ArrayList<>();
+
     public void initContext(String packageName) throws Exception {
-        scanpackage(packageName).stream().filter(this::scanCreate).map(this::wrapper).forEach(this::createBean);
+        scanpackage(packageName).stream().filter(this::scanCreate).forEach(this::wrapper);
+        initBeanPostProcessor();
+        beanDefinitionMap.values().forEach(this::createBean);
+    }
+
+    private void initBeanPostProcessor() {
+        beanDefinitionMap.values().stream()
+                .filter( bd -> BeanPostProcessor.class.isAssignableFrom(bd.getBeanType()))
+                .map(this::createBean)
+                .map((bean) -> (BeanPostProcessor) bean)
+                .forEach(postProcessors::add);
     }
 
     protected boolean scanCreate(Class<?> type) {
         return type.isAnnotationPresent(Component.class);
     }
 
-    protected void createBean(BeanDefinition beanDefinition) {
+    protected Object createBean(BeanDefinition beanDefinition) {
         String name = beanDefinition.getName();
         if (ioc.containsKey(name)) {
-            return;
+            return ioc.get(name);
         }
-        doCreateBean(beanDefinition);
+        if (loadingIoc.containsKey(name)) {
+            return loadingIoc.get(name);
+        }
+        return doCreateBean(beanDefinition);
+
     }
 
-    private void doCreateBean(BeanDefinition beanDefinition) {
+    private Object doCreateBean(BeanDefinition beanDefinition) {
         Constructor<?> constructor = beanDefinition.getConstructor();
         Object bean = null;
         try {
+            //主流程
             bean = constructor.newInstance();
-            Method postConstructMethod = beanDefinition.getPostConstructMethod();
-            if (postConstructMethod != null) {
-                postConstructMethod.invoke(bean);
-            }
-
+            loadingIoc.put(beanDefinition.getName(), bean);
+            autowireBean(bean, beanDefinition);
+            bean = initializeBean(bean, beanDefinition);
+            loadingIoc.remove(beanDefinition.getName());
+            ioc.put(beanDefinition.getName(), bean);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        ioc.put(beanDefinition.getName(), bean);
+        return bean;
+    }
+
+    private Object initializeBean(Object bean, BeanDefinition beanDefinition) throws InvocationTargetException, IllegalAccessException {
+        for (BeanPostProcessor postProcessor : postProcessors) {
+            bean = postProcessor.beforeInitializeBean(bean, beanDefinition.getName());
+        }
+
+        Method postConstructMethod = beanDefinition.getPostConstructMethod();
+        if (postConstructMethod != null) {
+            postConstructMethod.invoke(bean);
+        }
+
+        for (BeanPostProcessor postProcessor : postProcessors) {
+            bean = postProcessor.afterInitializeBean(bean, beanDefinition.getName());
+        }
+
+        return bean;
+    }
+
+    private void autowireBean(Object bean, BeanDefinition beanDefinition) throws IllegalAccessException {
+        for (Field autowiredField : beanDefinition.getAutowiredFields()) {
+            autowiredField.setAccessible(true);
+            Object aitowiredBean = null;
+            autowiredField.set(bean, getBean(autowiredField.getType()));
+        }
     }
 
     protected BeanDefinition wrapper(Class<?> type) {
         BeanDefinition beanDefinition = new BeanDefinition(type);
-        if (beanDefinitionMap.containsKey(beanDefinition.getName())){
+        if (beanDefinitionMap.containsKey(beanDefinition.getName())) {
             throw new RuntimeException("bean name is duplicate");
         }
         beanDefinitionMap.put(beanDefinition.getName(), beanDefinition);
@@ -97,23 +142,34 @@ public class ApplicationContext {
     }
 
     public Object getBean(String name) {
-        return this.ioc.get(name);
+        if (name == null) {
+            return null;
+        }
+        Object bean = this.ioc.get(name);
+        if (bean != null) {
+            return bean;
+        }
+        if (beanDefinitionMap.containsKey(name)) {
+            return createBean(beanDefinitionMap.get(name));
+        }
+        return null;
     }
 
     public <T> T getBean(Class<T> beanType) {
-        return this.ioc.values()
-                .stream()
-                .filter(bean -> beanType.isAssignableFrom(bean.getClass()))
-                .map(bean -> (T) bean)
-                .findAny()
+        String beanName = this.beanDefinitionMap.values().stream()
+                .filter(bd -> beanType.isAssignableFrom(bd.getBeanType()))
+                .map(BeanDefinition::getName)
+                .findFirst()
                 .orElse(null);
+        return (T) getBean(beanName);
     }
 
     public <T> List<T> getBeans(Class<T> beanType) {
-        return this.ioc.values()
-                .stream()
-                .filter(bean -> beanType.isAssignableFrom(bean.getClass()))
-                .map(bean -> (T) bean)
+        return this.beanDefinitionMap.values().stream()
+                .filter(bd -> beanType.isAssignableFrom(bd.getBeanType()))
+                .map(BeanDefinition::getName)
+                .map(this::getBean)
+                .map((bean)->(T)bean)
                 .toList();
     }
 }
