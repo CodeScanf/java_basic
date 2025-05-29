@@ -36,7 +36,7 @@ public class ApplicationContext {
     private List<BeanPostProcessor> postProcessors = new ArrayList<>();
 
     public void initContext(String packageName) throws Exception {
-        scanpackage(packageName).stream().filter(this::scanCreate).forEach(this::wrapper);
+        scanpackage(packageName).stream().filter(this::canCreate).forEach(this::wrapper);
         initBeanPostProcessor();
         beanDefinitionMap.values().forEach(this::createBean);
     }
@@ -49,7 +49,7 @@ public class ApplicationContext {
                 .forEach(postProcessors::add);
     }
 
-    protected boolean scanCreate(Class<?> type) {
+    protected boolean canCreate(Class<?> type) {
         return type.isAnnotationPresent(Component.class);
     }
 
